@@ -92,7 +92,9 @@ def create_bedrock_agentcore_policy(config):
                 ],
                 "Resource": [
                     f"arn:aws:secretsmanager:{region}:*:secret:{projectName}/cognito/credentials*",
-                    f"arn:aws:secretsmanager:{region}:*:secret:{projectName}/credentials*"
+                    f"arn:aws:secretsmanager:{region}:*:secret:{projectName}/credentials*",
+                    f"arn:aws:secretsmanager:{region}:*:secret:tavilyapikey-{projectName}*",
+                    f"arn:aws:secretsmanager:{region}:*:secret:notionapikey-{projectName}*",
                 ]
             },
             {
@@ -167,6 +169,16 @@ def create_bedrock_agentcore_policy(config):
                 "Effect": "Allow",
                 "Action": [
                     "ec2:*"
+                ],
+                "Resource": "*"
+            },
+            {
+                "Sid": "CloudFrontReadAccess",
+                "Effect": "Allow",
+                "Action": [
+                    "cloudfront:ListDistributions",
+                    "cloudfront:GetDistribution",
+                    "cloudfront:ListTagsForResource"
                 ],
                 "Resource": "*"
             }
@@ -756,6 +768,243 @@ def create_agent_runtime():
         return False
 
 # ============================================================================
+# S3 Bucket and CloudFront Distribution Setup
+# ============================================================================
+
+def setup_s3_bucket(config):
+    """Create an S3 bucket for artifact storage if it doesn't already exist.
+
+    Returns the bucket name, or None on failure.
+    """
+    region = config['region']
+    project_name = config.get('projectName', 'agentcore')
+    account_id = config['accountId']
+
+    # Bucket names must be globally unique and DNS-compatible
+    bucket_name = f"{project_name}-artifacts-{account_id}".lower().replace('_', '-')
+
+    s3 = boto3.client('s3', region_name=region)
+
+    try:
+        s3.head_bucket(Bucket=bucket_name)
+        print(f"S3 bucket already exists: {bucket_name}")
+        return bucket_name
+    except ClientError as e:
+        if e.response['Error']['Code'] != '404':
+            print(f"Error checking S3 bucket: {e}")
+            return None
+
+    try:
+        if region == 'us-east-1':
+            s3.create_bucket(Bucket=bucket_name)
+        else:
+            s3.create_bucket(
+                Bucket=bucket_name,
+                CreateBucketConfiguration={'LocationConstraint': region}
+            )
+
+        # Block all public access
+        s3.put_public_access_block(
+            Bucket=bucket_name,
+            PublicAccessBlockConfiguration={
+                'BlockPublicAcls': True,
+                'IgnorePublicAcls': True,
+                'BlockPublicPolicy': True,
+                'RestrictPublicBuckets': True,
+            }
+        )
+        print(f"✓ S3 bucket created: {bucket_name}")
+        return bucket_name
+
+    except Exception as e:
+        print(f"Error creating S3 bucket: {e}")
+        return None
+
+
+def setup_cloudfront_distribution(config, bucket_name):
+    """Create a CloudFront distribution backed by the given S3 bucket.
+
+    Uses Origin Access Control (OAC) so the bucket stays private.
+    Returns the CloudFront HTTPS domain (https://xxx.cloudfront.net), or None on failure.
+    """
+    region = config['region']
+    account_id = config['accountId']
+    project_name = config.get('projectName', 'agentcore')
+
+    cf = boto3.client('cloudfront', region_name='us-east-1')
+    s3 = boto3.client('s3', region_name=region)
+
+    # ------------------------------------------------------------------
+    # 1. Check if a distribution for this bucket already exists
+    # ------------------------------------------------------------------
+    try:
+        paginator = cf.get_paginator('list_distributions')
+        for page in paginator.paginate():
+            for dist in page.get('DistributionList', {}).get('Items', []):
+                origins = dist.get('Origins', {}).get('Items', [])
+                if any(bucket_name in o.get('DomainName', '') for o in origins):
+                    url = f"https://{dist['DomainName']}"
+                    print(f"CloudFront distribution already exists: {url}")
+                    return url
+    except Exception as e:
+        print(f"Error checking existing CloudFront distributions: {e}")
+
+    # ------------------------------------------------------------------
+    # 2. Create Origin Access Control
+    # ------------------------------------------------------------------
+    oac_name = f"{project_name}-oac"
+    oac_id = None
+    try:
+        oac_resp = cf.create_origin_access_control(
+            OriginAccessControlConfig={
+                'Name': oac_name,
+                'Description': f"OAC for {project_name} S3 bucket",
+                'SigningProtocol': 'sigv4',
+                'SigningBehavior': 'always',
+                'OriginAccessControlOriginType': 's3',
+            }
+        )
+        oac_id = oac_resp['OriginAccessControl']['Id']
+        print(f"✓ Origin Access Control created: {oac_id}")
+    except cf.exceptions.OriginAccessControlAlreadyExists:
+        # Find existing OAC by name
+        try:
+            oac_list = cf.list_origin_access_controls()
+            for item in oac_list.get('OriginAccessControlList', {}).get('Items', []):
+                if item['Name'] == oac_name:
+                    oac_id = item['Id']
+                    print(f"Origin Access Control already exists: {oac_id}")
+                    break
+        except Exception as e:
+            print(f"Error finding existing OAC: {e}")
+    except Exception as e:
+        print(f"Error creating OAC: {e}")
+
+    # ------------------------------------------------------------------
+    # 3. Create CloudFront distribution
+    # ------------------------------------------------------------------
+    s3_origin_domain = f"{bucket_name}.s3.{region}.amazonaws.com"
+    caller_ref = f"{project_name}-{account_id}"
+
+    dist_config = {
+        'CallerReference': caller_ref,
+        'Comment': f"Distribution for {project_name} artifacts",
+        'Enabled': True,
+        'Origins': {
+            'Quantity': 1,
+            'Items': [
+                {
+                    'Id': f"{project_name}-s3-origin",
+                    'DomainName': s3_origin_domain,
+                    'S3OriginConfig': {'OriginAccessIdentity': ''},
+                    **({"OriginAccessControlId": oac_id} if oac_id else {}),
+                }
+            ],
+        },
+        'DefaultCacheBehavior': {
+            'TargetOriginId': f"{project_name}-s3-origin",
+            'ViewerProtocolPolicy': 'redirect-to-https',
+            'CachePolicyId': '658327ea-f89d-4fab-a63d-7e88639e58f6',  # CachingOptimized
+            'AllowedMethods': {
+                'Quantity': 2,
+                'Items': ['GET', 'HEAD'],
+                'CachedMethods': {'Quantity': 2, 'Items': ['GET', 'HEAD']},
+            },
+        },
+        'HttpVersion': 'http2',
+        'IsIPV6Enabled': True,
+        'PriceClass': 'PriceClass_All',
+    }
+
+    try:
+        resp = cf.create_distribution(DistributionConfig=dist_config)
+        dist = resp['Distribution']
+        url = f"https://{dist['DomainName']}"
+        dist_id = dist['Id']
+        print(f"✓ CloudFront distribution created: {url} (id: {dist_id})")
+
+        # ------------------------------------------------------------------
+        # 4. Attach bucket policy to allow CloudFront OAC access
+        # ------------------------------------------------------------------
+        if oac_id:
+            bucket_policy = json.dumps({
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Sid": "AllowCloudFrontServicePrincipal",
+                        "Effect": "Allow",
+                        "Principal": {"Service": "cloudfront.amazonaws.com"},
+                        "Action": "s3:GetObject",
+                        "Resource": f"arn:aws:s3:::{bucket_name}/*",
+                        "Condition": {
+                            "StringEquals": {
+                                "AWS:SourceArn": f"arn:aws:cloudfront::{account_id}:distribution/{dist_id}"
+                            }
+                        },
+                    }
+                ],
+            })
+            s3.put_bucket_policy(Bucket=bucket_name, Policy=bucket_policy)
+            print(f"✓ S3 bucket policy updated for CloudFront OAC access")
+
+        return url
+
+    except cf.exceptions.DistributionAlreadyExists:
+        print("CloudFront distribution already exists (CallerReference conflict); searching...")
+        try:
+            paginator = cf.get_paginator('list_distributions')
+            for page in paginator.paginate():
+                for dist in page.get('DistributionList', {}).get('Items', []):
+                    origins = dist.get('Origins', {}).get('Items', [])
+                    if any(bucket_name in o.get('DomainName', '') for o in origins):
+                        url = f"https://{dist['DomainName']}"
+                        print(f"Found existing distribution: {url}")
+                        return url
+        except Exception as e:
+            print(f"Error searching existing distributions: {e}")
+    except Exception as e:
+        print(f"Error creating CloudFront distribution: {e}")
+
+    return None
+
+
+def setup_storage():
+    """Create S3 bucket and CloudFront distribution, then save both to config.json."""
+    print(f"\n{'='*60}")
+    print("Setting up S3 bucket and CloudFront distribution")
+    print(f"{'='*60}")
+
+    config = load_config()
+
+    # ---- S3 ----
+    s3_bucket = config.get('s3_bucket')
+    if s3_bucket:
+        print(f"s3_bucket already configured: {s3_bucket}")
+    else:
+        s3_bucket = setup_s3_bucket(config)
+        if not s3_bucket:
+            print("Error: Failed to create S3 bucket")
+            return False
+        update_config('s3_bucket', s3_bucket)
+        print(f"✓ config.json updated with s3_bucket: {s3_bucket}")
+
+    # ---- CloudFront ----
+    sharing_url = config.get('sharing_url')
+    if sharing_url:
+        print(f"sharing_url already configured: {sharing_url}")
+    else:
+        sharing_url = setup_cloudfront_distribution(config, s3_bucket)
+        if not sharing_url:
+            print("Warning: Failed to create CloudFront distribution; sharing_url not set")
+        else:
+            update_config('sharing_url', sharing_url)
+            print(f"✓ config.json updated with sharing_url: {sharing_url}")
+
+    print("\n✓ Storage setup completed")
+    return True
+
+
+# ============================================================================
 # Main Function
 # ============================================================================
 
@@ -776,6 +1025,7 @@ def main():
     # Execute each step
     steps = [
         ("Creating IAM policies and roles", create_iam_policies),
+        ("Setting up S3 bucket and CloudFront distribution", setup_storage),
         ("Building Docker image and pushing to ECR", push_to_ecr),
         ("Creating/updating AgentCore runtime", create_agent_runtime),
     ]
@@ -796,12 +1046,18 @@ def main():
     
     role_arn = config.get('agent_runtime_role')
     arn = config.get('agent_runtime_arn')
-    
+    s3_bucket = config.get('s3_bucket')
+    sharing_url = config.get('sharing_url')
+
     if role_arn:
-        print(f"\nCreated AgentCore Runtime Role ARN: {role_arn}")
+        print(f"\nAgentCore Runtime Role ARN: {role_arn}")
     if arn:
-        print(f"Created AgentCore Runtime ARN: {arn}")
-    
+        print(f"AgentCore Runtime ARN:      {arn}")
+    if s3_bucket:
+        print(f"S3 Bucket:                  {s3_bucket}")
+    if sharing_url:
+        print(f"Sharing URL (CloudFront):   {sharing_url}")
+
     if role_arn and arn:
         print("\nInstallation complete!")
     else:

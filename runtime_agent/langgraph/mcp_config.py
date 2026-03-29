@@ -49,51 +49,17 @@ def load_config(mcp_type):
     if mcp_type == "aws document":
         mcp_type = 'aws_documentation'
 
-    if mcp_type == "kb-retriever":   # use agentcore runtime mcp
-        agent_arn = get_agent_runtime_arn(mcp_type)
-        logger.info(f"mcp_type: {mcp_type}, agent_arn: {agent_arn}")
-        if agent_arn is None:
-            logger.warning(f"Agent runtime for '{mcp_type}' not found. Skipping MCP server. Ensure agent_runtime_{mcp_type.replace('-', '_')} is deployed.")
-            return None
-        encoded_arn = agent_arn.replace(':', '%3A').replace('/', '%2F')
-        
-        mcp_url = f"https://bedrock-agentcore.{region}.amazonaws.com/runtimes/{encoded_arn}/invocations?qualifier=DEFAULT"
-        
+    if mcp_type == "tavily":
         return {
             "mcpServers": {
-                "kb-retriever": {
-                    "type": "streamable_http",
-                    "url": mcp_url,
-                    "headers": {
-                        "Content-Type": "application/json",
-                        "Accept": "application/json, text/event-stream"
-                    }
+                "tavily-search": {
+                    "command": "python",
+                    "args": [
+                        f"{workingDir}/mcp_server_tavily.py"
+                    ]
                 }
             }
         }
-
-    elif mcp_type == "use-aws":
-        agent_arn = get_agent_runtime_arn(mcp_type)
-        logger.info(f"mcp_type: {mcp_type}, agent_arn: {agent_arn}")
-        if agent_arn is None:
-            logger.warning(f"Agent runtime for '{mcp_type}' not found. Skipping MCP server. Ensure agent_runtime_{mcp_type.replace('-', '_')} is deployed.")
-            return None
-        encoded_arn = agent_arn.replace(':', '%3A').replace('/', '%2F')
-        
-        mcp_url = f"https://bedrock-agentcore.{region}.amazonaws.com/runtimes/{encoded_arn}/invocations?qualifier=DEFAULT"
-        
-        return {
-            "mcpServers": {
-                "use_aws": {
-                    "type": "streamable_http",
-                    "url": mcp_url,
-                    "headers": {
-                        "Content-Type": "application/json",
-                        "Accept": "application/json, text/event-stream"
-                    }
-                }
-            }
-        }    
     
     elif mcp_type == "aws_documentation":
         return {
@@ -107,6 +73,39 @@ def load_config(mcp_type):
                 }
             }
         }
+    
+    elif mcp_type == "web_fetch":
+        return {
+            "mcpServers": {
+                "web_fetch": {
+                    "command": "npx",
+                    "args": ["-y", "mcp-server-fetch-typescript"]
+                }
+            }
+        }
+    
+    elif mcp_type == "korea_weather":
+        return {
+            "mcpServers": {
+                "korea-weather": {
+                    "command": "python",
+                    "args": [f"{workingDir}/mcp_server_korea_weather.py"]
+                }
+            }
+        }
+    
+    elif mcp_type == "notion":
+        return {
+            "mcpServers": {
+                "notionApi": {
+                    "command": "npx",
+                    "args": ["-y", "@notionhq/notion-mcp-server"],
+                    "env": {
+                        "NOTION_TOKEN": utils.notion_api_key
+                    }
+                }
+            }
+        }    
         
     elif mcp_type == "사용자 설정":
         return mcp_user_config

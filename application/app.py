@@ -51,35 +51,16 @@ with st.sidebar:
 
         # Change radio to checkbox
         mcp_options = [
-            "kb-retriever", "use-aws", "aws document", "사용자 설정"
+            "aws document", "tavily", "web_fetch", "korea_weather", "notion"
         ]
         mcp_selections = {}
-        default_selections = ["kb-retriever", "use-aws"]
+        default_selections = ["web_fetch", "korea_weather", "notion"]
 
         with st.expander("MCP 옵션 선택", expanded=True):            
-            # Create two columns
-            col1, col2 = st.columns(2)
+            for option in mcp_options:
+                default_value = option in default_selections
+                mcp_selections[option] = st.checkbox(option, key=f"mcp_{option}", value=default_value)
             
-            # Split options into two groups
-            mid_point = len(mcp_options) // 2
-            first_half = mcp_options[:mid_point]
-            second_half = mcp_options[mid_point:]
-            
-            # Display first group in the first column
-            with col1:
-                for option in first_half:
-                    default_value = option in default_selections
-                    mcp_selections[option] = st.checkbox(option, key=f"mcp_{option}", value=default_value)
-            
-            # Display second group in the second column
-            with col2:
-                for option in second_half:
-                    default_value = option in default_selections
-                    mcp_selections[option] = st.checkbox(option, key=f"mcp_{option}", value=default_value)
-        
-        # if not any(mcp_selections.values()):
-        #     mcp_selections["basic"] = True
-
         mcp_servers = [server for server, is_selected in mcp_selections.items() if is_selected]
     else:
         mcp_servers = []

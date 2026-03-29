@@ -61,6 +61,11 @@ htmlcov/
 docs/
 *.md
 !README.md
+# Keep skill instructions and plugin assets
+!skills/
+!skills/**
+!plugins/
+!plugins/**
 
 # CI/CD
 .github/

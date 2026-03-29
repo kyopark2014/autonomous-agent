@@ -48,12 +48,12 @@ model_id = models[0]["model_id"]
 checkpointers = dict() 
 memorystores = dict() 
 
-user_id = None
 checkpointer = MemorySaver()
 memorystore = InMemoryStore()
 
 # Default reasoning mode
 reasoning_mode = 'Disable'
+# Merge builtin skill tools (memory, files, etc.) when "Enable"
 user_id = 'langgraph'
 
 def update(modelName, userId):
@@ -83,6 +83,13 @@ def update(modelName, userId):
             checkpointers[user_id] = checkpointer
             memorystores[user_id] = memorystore
 
+selected_chat = 0
+def get_max_output_tokens(model_id: str = "") -> int:
+    """Return the max output tokens based on the model ID."""
+    if "claude-4" in model_id or "claude-sonnet-4" in model_id or "claude-opus-4" in model_id or "claude-haiku-4" in model_id:
+        return 16384
+    return 8192
+
 def get_chat(extended_thinking=None):
     # Set default value if not provided or invalid
     if extended_thinking is None or extended_thinking not in ['Enable', 'Disable']:
@@ -93,42 +100,28 @@ def get_chat(extended_thinking=None):
     bedrock_region =  profile['bedrock_region']
     modelId = profile['model_id']
     model_type = profile['model_type']
-    maxOutputTokens = 4096 # 4k
     logger.info(f"LLM: bedrock_region: {bedrock_region}, modelId: {modelId}, model_type: {model_type}")
 
     STOP_SEQUENCE = "\n\nHuman:" 
                           
+    # bedrock   
     boto3_bedrock = boto3.client(
         service_name='bedrock-runtime',
         region_name=bedrock_region,
         config=Config(
             retries = {
                 'max_attempts': 30
-            }
+            },
+            read_timeout=300
         )
     )
     
-    if extended_thinking=='Enable':
-        maxReasoningOutputTokens=64000
-        logger.info(f"extended_thinking: {extended_thinking}")
-        thinking_budget = min(maxOutputTokens, maxReasoningOutputTokens-1000)
-
-        parameters = {
-            "max_tokens":maxReasoningOutputTokens,
-            "temperature":1,            
-            "thinking": {
-                "type": "enabled",
-                "budget_tokens": thinking_budget
-            },
-            "stop_sequences": [STOP_SEQUENCE]
-        }
-    else:
-        parameters = {
-            "max_tokens":maxOutputTokens,     
-            "temperature":0.1,
-            "top_k":250,
-            "stop_sequences": [STOP_SEQUENCE]
-        }
+    parameters = {
+        "max_tokens":get_max_output_tokens(modelId),     
+        "temperature":0.1,
+        "top_k":250,
+        "stop_sequences": [STOP_SEQUENCE]
+    }
 
     chat = ChatBedrock(   # new chat model
         model_id=modelId,

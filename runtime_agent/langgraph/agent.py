@@ -6,6 +6,7 @@ import langgraph_agent
 import utils
 import httpx
 import boto3
+import skill
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 from botocore.auth import SigV4Auth as BotocoreSigV4Auth
@@ -151,7 +152,16 @@ async def agent_langgraph(payload):
         
         client = MultiServerMCPClient(server_params)
         tools = await client.get_tools()
-        
+
+    # add builtin tools
+    builtin_tools = skill.get_builtin_tools()
+    tool_names = {tool.name for tool in tools}
+    for bt in builtin_tools:
+        if bt.name not in tool_names:
+            tools.append(bt)
+        else:
+            logger.info(f"builtin_tool {bt.name} already in tools")
+    
     tool_list = [tool.name for tool in tools]
     logger.info(f"tool_list: {tool_list}")
 
@@ -160,6 +170,7 @@ async def agent_langgraph(payload):
         "recursion_limit": 50,
         "configurable": {"thread_id": user_id},
         "tools": tools,
+        "plugin_name": "base",
         "system_prompt": None
     }
     
