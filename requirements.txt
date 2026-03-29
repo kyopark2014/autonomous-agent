@@ -1,0 +1,6 @@
+bedrock-agentcore
+bedrock-agentcore-starter-toolkit
+streamlit
+streamlit-chat
+boto3
+uv
