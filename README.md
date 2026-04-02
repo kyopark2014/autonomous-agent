@@ -45,7 +45,7 @@ agent = Agent(tools=[shell], system_prompt=SYSTEM_PROMPT, load_tools_from_direct
 agent("Create 5 tool for yourself and start using.")
 ```
 
-## 시스템 프롬프트를 스스로 수정하는 에이전트<img width="850" height="84" alt="image" src="https://github.com/user-attachments/assets/35e5d09b-8802-4e86-90b8-2c1dab9933a6" />
+## 시스템 프롬프트를 스스로 수정하는 에이전트
 
 
 ```python
