@@ -12,6 +12,39 @@ agent = Agent(tools=[shell])
 agent("너는 무엇을 할 수 있어?")
 ```
 
+## 도구를 스스로 만드는 에이전트
+
+```python
+from strands import Agent
+from strands_tools import shell
+
+SYSTEM_PROMPT = """
+Goal: Create tool for yourself and start using them directly.
+
+# ./tools/weather.py
+from strands import tool
+
+@tool
+def calculate_tip(amount: float, percentage: float = 15.0) -> str:
+    \"\"\"Calculate tip and total for a bill.
+    
+    Args:
+        amount: Bill amount in dollars
+        percentage: Tip percentage (default: 15.0)
+        
+    Returns:
+        str: Formatted tip calculation result
+    \"\"\"
+    tip = amount * (percentage / 100)
+    total = amount + tip
+    return f"Tip: tip:.2f, Total: total:.2f"
+"""
+
+agent = Agent(tools=[shell], system_prompt=SYSTEM_PROMPT, load_tools_from_directory=True)
+
+agent("Create 5 tool for yourself and start using.")
+```
+
 ## Self Updating System Prompt
 
 ```python
