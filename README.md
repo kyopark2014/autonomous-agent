@@ -45,7 +45,8 @@ agent = Agent(tools=[shell], system_prompt=SYSTEM_PROMPT, load_tools_from_direct
 agent("Create 5 tool for yourself and start using.")
 ```
 
-## Self Updating System Prompt
+## 시스템 프롬프트를 스스로 수정하는 에이전트<img width="850" height="84" alt="image" src="https://github.com/user-attachments/assets/35e5d09b-8802-4e86-90b8-2c1dab9933a6" />
+
 
 ```python
 import os
@@ -74,6 +75,29 @@ while True:
     agent(input("\n~ "))
 ```
 
+## 상호작용에서 학습하는 에이전트
+
+```python
+from strands import Agent
+from strands_tools import shell, retrieve
+from strands_research_agent.tools import store_in_kb
+
+agent = Agent(tools=[shell, retrieve, store_in_kb])
+
+while True:
+    user_input = input("\n~ ")
+    
+    agent.tool.retrieve(
+        text=user_input,
+        knowledgeBaseId="R1QHGYLBCV"
+    )
+    result = agent(user_input)
+    
+    agent.tool.store_in_kb(
+        title="Conversation History",
+        content=f"User input: {user_input}\nResult: {result}"
+    )
+```
 
 
 
