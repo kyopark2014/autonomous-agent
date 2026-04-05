@@ -100,6 +100,32 @@ while True:
 ```
 
 
+## AgentCore
+
+```python
+from strands import Agent
+from strands_tools import shell, environment, use_agent
+from bedrock_agentcore.runtime import BedrockAgentCoreApp
+
+app = BedrockAgentCoreApp()
+
+@app.entrypoint
+def invoke(payload):
+    """AgentCore entrypoint """
+    q = payload.get("prompt", "")
+
+    agent = Agent(
+        model=model,
+        tools=[system_prompt, shell, environment, use_agent],
+        load_tools_from_directory=True
+    )
+    result = agent(q)
+    return {"result": str(result)}
+
+if __name__ == "__main__":
+    app.run()
+```
+
 
 ## Reference 
 
