@@ -1,6 +1,9 @@
 from strands import Agent
 from strands_tools import shell
 
+import os
+os.environ["BYPASS_TOOL_CONSENT"] = "true"
+
 SYSTEM_PROMPT = """
 Goal: Create tool for yourself and start using them directly.
 

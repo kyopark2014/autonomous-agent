@@ -1,31 +1,44 @@
 from strands import tool
 
 @tool
-def convert_temperature(value: float, from_unit: str, to_unit: str) -> str:
-    """Convert temperature between Celsius, Fahrenheit, and Kelvin.
+def convert_units(value: float, from_unit: str, to_unit: str, unit_type: str) -> str:
+    """Convert between different units (length, weight, volume).
     
     Args:
-        value: Temperature value to convert
-        from_unit: Source unit ('C', 'F', or 'K')
-        to_unit: Target unit ('C', 'F', or 'K')
+        value: Numeric value to convert
+        from_unit: Source unit (e.g., 'km', 'lb', 'ml')
+        to_unit: Target unit (e.g., 'mi', 'kg', 'oz')
+        unit_type: Type of unit ('length', 'weight', 'volume')
         
     Returns:
-        str: Converted temperature result
+        str: Conversion result
     """
-    # Convert to Celsius first
-    if from_unit.upper() == 'F':
-        celsius = (value - 32) * 5/9
-    elif from_unit.upper() == 'K':
-        celsius = value - 273.15
-    else:  # Celsius
-        celsius = value
+    conversions = {
+        'length': {
+            'mm': 0.001, 'cm': 0.01, 'm': 1, 'km': 1000,
+            'in': 0.0254, 'ft': 0.3048, 'yd': 0.9144, 'mi': 1609.34
+        },
+        'weight': {
+            'mg': 0.001, 'g': 1, 'kg': 1000, 'oz': 28.3495, 
+            'lb': 453.592, 'ton': 1000000
+        },
+        'volume': {
+            'ml': 1, 'l': 1000, 'gal': 3785.41, 'qt': 946.353,
+            'pt': 473.176, 'cup': 236.588, 'fl_oz': 29.5735
+        }
+    }
     
-    # Convert from Celsius to target
-    if to_unit.upper() == 'F':
-        result = celsius * 9/5 + 32
-    elif to_unit.upper() == 'K':
-        result = celsius + 273.15
-    else:  # Celsius
-        result = celsius
+    if unit_type not in conversions:
+        return f"Error: Unknown unit type '{unit_type}'"
     
-    return f"{value}°{from_unit.upper()} = {result:.2f}°{to_unit.upper()}"
+    unit_map = conversions[unit_type]
+    
+    if from_unit not in unit_map or to_unit not in unit_map:
+        available = list(unit_map.keys())
+        return f"Error: Units must be from {available}"
+    
+    # Convert to base unit, then to target unit
+    base_value = value * unit_map[from_unit]
+    result = base_value / unit_map[to_unit]
+    
+    return f"{value} {from_unit} = {result:.4f} {to_unit}"
