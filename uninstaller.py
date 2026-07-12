@@ -14,7 +14,7 @@ import argparse
 from botocore.exceptions import ClientError
 
 # Configuration
-project_name = "agent-runtime"
+project_name = "autonomous-agent"
 region = "us-west-2"  
 
 sts_client = boto3.client("sts", region_name=region)
